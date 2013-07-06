@@ -24,8 +24,7 @@ def init_and_bind_engine(dburi):
 net_table = sa.Table('nets', meta,
         Column('unit', String(20), primary_key=True),
         Column('num', Integer, primary_key=True),
-        Column('sig_desc', String(50))
-        )
+        Column('sig_desc', String(50)))
 
 class Net(object):
     def __init__(self, unit, sig_desc=None):
@@ -36,7 +35,7 @@ class Net(object):
         return "N-%s.%s" % (self.unit, self.num)
     def __repr__(self):
         return "<net %s>" % str(self)
-    
+
 class NetMapperExtension(orm.MapperExtension):
     def before_insert(self, mapper, connection, instance):
         num_sel = sa.select(
@@ -44,22 +43,25 @@ class NetMapperExtension(orm.MapperExtension):
                 net_table.c.unit == instance.unit)
         instance.num = num_sel.execute().fetchone().max or 0
         instance.num += 1
-    
+
     def before_delete(self, mapper, connection, instance):
         cdr_mapper = orm.class_mapper(Conductor)
         [ cdr_mapper.delete_obj(cdr) for cdr in instance.linked_cdrs ]
 
 conductor_table = sa.Table('conductors', meta,
-        Column('a_net_unit', String(20), nullable=False), #ForeignKey('nets.unit')),
-        Column('a_net_num', Integer, nullable=False), #ForeignKey('nets.num')),
-        Column('b_net_unit', String(20), nullable=False), #ForeignKey('nets.unit')),
-        Column('b_net_num', Integer, nullable=False), #ForeignKey('nets.num')),
+        Column('a_net_unit', String(20), nullable=False),
+        Column('a_net_num', Integer, nullable=False),
+        Column('b_net_unit', String(20), nullable=False),
+        Column('b_net_num', Integer, nullable=False),
         Column('kind', String(20)),
         Column('cable', Integer, primary_key=True),
         Column('subcdr', Integer, primary_key=True),
-        ForeignKeyConstraint(['a_net_unit', 'a_net_num'], ['nets.unit', 'nets.num']),
-        ForeignKeyConstraint(['b_net_unit', 'b_net_num'], ['nets.unit', 'nets.num'])
-        )
+        ForeignKeyConstraint(
+            ['a_net_unit', 'a_net_num'],
+            ['nets.unit', 'nets.num']),
+        ForeignKeyConstraint(
+            ['b_net_unit', 'b_net_num'],
+            ['nets.unit', 'nets.num']))
 
 class Conductor(object):
     def __init__(self, a_net, b_net, kind='C', cable=None):
@@ -102,19 +104,20 @@ class ConductorMapperExtension(orm.MapperExtension):
         conductor_table.update(
                 and_(conductor_table.c.cable==instance.cable,
                     conductor_table.c.subcdr > instance.subcdr),
-                values={ conductor_table.c.subcdr: 
+                values={ conductor_table.c.subcdr:
                     conductor_table.c.subcdr - 1 }).execute()
 
 pin_table = sa.Table('pins', meta,
-        Column('net_unit', String(20), nullable=False, #ForeignKey('nets.unit'),
+        Column('net_unit', String(20), nullable=False,
             primary_key=True),
-        Column('net_num', Integer, nullable=False, #ForeignKey('nets.num'),
+        Column('net_num', Integer, nullable=False,
             primary_key=True),
         Column('conn', String(20), primary_key=True),
         Column('desig', String(20), primary_key=True),
         Column('sig_desc', String(50)),
-        ForeignKeyConstraint(['net_unit', 'net_num'], ['nets.unit', 'nets.num'])
-        )
+        ForeignKeyConstraint(
+            ['net_unit', 'net_num'],
+            ['nets.unit', 'nets.num']))
 
 class Pin(object):
     def __init__(self, conn, desig, net=None, sig_desc=None):
@@ -124,7 +127,8 @@ class Pin(object):
         self.sig_desc = sig_desc
 
     def __str__(self):
-        return "P-%s.%s.%s (%s)" % (self.net and self.net.unit or None, 
+        return "P-%s.%s.%s (%s)" % (
+                self.net and self.net.unit or None,
                 self.conn, self.desig, self.sig_desc)
     def __repr__(self):
         return "<pin %s>" % str(self)
@@ -138,22 +142,11 @@ net_to_cdr_join = or_(
 orm.mapper(Net, net_table, properties = {
     'linked_cdrs': orm.relation(Conductor,
         primaryjoin = net_to_cdr_join,
-#        foreign_keys = [
-#            conductor_table.c.a_net_unit,
-#            conductor_table.c.a_net_num,
-#            conductor_table.c.b_net_unit,
-#            conductor_table.c.b_net_num],
-        order_by = [ 
+        order_by = [
             conductor_table.c.cable,
             conductor_table.c.subcdr ]
         ),
     'linked_pins': orm.relation(Pin,
-#        primaryjoin = and_(
-#            net_table.c.unit == pin_table.c.net_unit,
-#            net_table.c.num == pin_table.c.net_num),
-#        foreign_keys = [
-#            pin_table.c.net_unit,
-#            pin_table.c.net_num],
         cascade = 'all, delete-orphan',
         backref = orm.backref('net', lazy=False)
         )
@@ -172,15 +165,11 @@ orm.mapper(Conductor, conductor_table, properties = {
         )
     }, extension=ConductorMapperExtension())
 
-pin_net_join = and_(
+pin_to_net_join = and_(
         pin_table.c.net_unit == net_table.c.unit,
         pin_table.c.net_num == net_table.c.num)
 
-orm.mapper(Pin, pin_table) #, properties = {
-#    'net': orm.relation(Net, uselist=False) #, primaryjoin=pin_net_join)
-#    })
-
-
+orm.mapper(Pin, pin_table)
 
 
 class Interconnect(object):
@@ -191,7 +180,7 @@ class Interconnect(object):
         self._ses = None
         self._filter_units = None
         self._link_filter = False
-        
+
         if debug:
             meta.bind.echo = True
 
@@ -270,21 +259,22 @@ class Interconnect(object):
         pin_tables_q = self._pin_table_query()
         pin_tables_result = list(pin_tables_q)
 
-        output_lines = [ ['Unit', 'Net', 'Conn', 'Pin',
-            'Sig Desc', 'Cdrs', 'Ref Net', 'PCID'], ]
+        output_lines = ['Unit Net Conn Pin Signal Cdrs Ref Net PCID'.split()]
 
         prev_output_line = [None] * 7
         pcid = 0
         for index in range(len(pin_tables_result)):
             cur_pin, cur_net = pin_tables_result[index]
-            
+
             unblanked_output_line = [
                     cur_net.unit,
                     ('.%s' % str(cur_net.num)),
                     cur_pin.conn,
                     cur_pin.desig,
                     cur_pin.sig_desc or '',
-                    '', '', pcid ]
+                    '',
+                    '',
+                    pcid]
             output_line = list(unblanked_output_line)
             pcid += 1
 
@@ -293,7 +283,7 @@ class Interconnect(object):
                     output_line[field] = ''
                 elif field != 1:
                     break
-            
+
             prev_output_line = unblanked_output_line
 
             if len(output_line[0]):
@@ -337,8 +327,8 @@ class Interconnect(object):
         cdr_table_q = self._cdr_table_query()
         cdr_table_result = list(cdr_table_q)
 
-        output_lines = [ ['Unit', 'Conn', 'Pin', '[/]', 'Cdr', '[/]',
-            'Pin', 'Conn', 'Unit'], [''] * 9 ]
+        output_lines = ['Unit Conn Pin [/] Cdr [/] Pin Conn Unit'.split()]
+        output_lines.append(['' for _ in output_lines[0]])
 
         prev_output_line = [None] * 9
 
@@ -404,7 +394,7 @@ class Interconnect(object):
         print pin_a_net
         print pin_b_net
         print new_cdr
-        
+
         self._close_ses()
 
     def add_pin(self, unit, conn, pin, net_num):
@@ -412,7 +402,7 @@ class Interconnect(object):
 
         existing_net = s.query(Net).filter(net_table.c.unit == unit) \
                 .filter(net_table.c.num == net_num)[0]
-        
+
         the_pin = Pin(conn, pin)
         existing_net.linked_pins.append(the_pin)
         s.flush()
@@ -458,7 +448,7 @@ class Interconnect(object):
         return [ r[0] + ' ' for r in compl_r ]
 
     def complete_conn(self, unit, prefix):
-        pn_j = sa.join(pin_table, net_table, onclause=pin_net_join)
+        pn_j = sa.join(pin_table, net_table, onclause=pin_to_net_join)
         compl_r = sa.select([pin_table.c.conn],
             whereclause=and_(
                 net_table.c.unit==unit,
@@ -474,7 +464,7 @@ class Interconnect(object):
         try:
 
             nets_sorted_j = sa.outerjoin(net_table, pin_table,
-                    onclause = pin_net_join)
+                    onclause = pin_to_net_join)
             nets_sorted_q = sa.select(
                     [net_table.c.unit, net_table.c.num,
                         sa.func.min(pin_table.c.conn)
@@ -492,46 +482,52 @@ class Interconnect(object):
                         'numeric_conn_sort', 'lexical_conn_sort',
                         'numeric_pin_sort', 'lexical_pin_sort'])
             nets_sorted = list(conn.execute(nets_sorted_q))
-            
 
+            # This is a marginal hack to avoid having to do more magic to keep
+            # from breaking PK uniqueness constraints. Update each reference to
+            # the old net number with the negation of the new net number...
             for index in range(len(nets_sorted)):
                 new_num = index + 1
                 print nets_sorted[index], '->', new_num
 
-                # This is a marginal hack to avoid having to do more magic
-                # to keep from breaking PK uniqueness constraints.
-                conn.execute(net_table.update(and_(
-                    net_table.c.unit==nets_sorted[index].unit,
-                    net_table.c.num==nets_sorted[index].num),
-                    { 'num': -new_num }))
-                conn.execute(pin_table.update(and_(
-                    pin_table.c.net_unit==nets_sorted[index].unit,
-                    pin_table.c.net_num==nets_sorted[index].num),
-                    { 'net_num': -new_num }))
-                conn.execute(conductor_table.update(and_(
-                    conductor_table.c.a_net_unit==nets_sorted[index].unit,
-                    conductor_table.c.a_net_num==nets_sorted[index].num),
-                    { 'a_net_num': -new_num }))
-                conn.execute(conductor_table.update(and_(
-                    conductor_table.c.b_net_unit==nets_sorted[index].unit,
-                    conductor_table.c.b_net_num==nets_sorted[index].num),
-                    { 'b_net_num': -new_num }))
+                conn.execute(net_table.update(
+                    and_(net_table.c.unit==nets_sorted[index].unit,
+                         net_table.c.num==nets_sorted[index].num),
+                    {'num': -new_num}))
+                conn.execute(pin_table.update(
+                    and_(pin_table.c.net_unit==nets_sorted[index].unit,
+                         pin_table.c.net_num==nets_sorted[index].num),
+                    {'net_num': -new_num}))
+                conn.execute(conductor_table.update(
+                    and_(conductor_table.c.a_net_unit==nets_sorted[index].unit,
+                         conductor_table.c.a_net_num==nets_sorted[index].num),
+                    {'a_net_num': -new_num}))
+                conn.execute(conductor_table.update(
+                    and_(conductor_table.c.b_net_unit==nets_sorted[index].unit,
+                         conductor_table.c.b_net_num==nets_sorted[index].num),
+                    {'b_net_num': -new_num}))
 
-            conn.execute(net_table.update(net_table.c.num<0,
-                    { 'num': sa.func.abs(net_table.c.num) }))
-            conn.execute(pin_table.update(pin_table.c.net_num<0,
-                    { 'net_num': sa.func.abs(pin_table.c.net_num) }))
-            conn.execute(conductor_table.update(conductor_table.c.a_net_num<0,
-                    { 'a_net_num': sa.func.abs(conductor_table.c.a_net_num) }
-                    ))
-            conn.execute(conductor_table.update(conductor_table.c.b_net_num<0,
-                    { 'b_net_num': sa.func.abs(conductor_table.c.b_net_num) }
-                    ))
+            # ...then bulk-update all net number references to the absolute
+            # value of themselves.
+            conn.execute(net_table.update(
+                net_table.c.num<0,
+                {'num': sa.func.abs(net_table.c.num)}))
+            conn.execute(pin_table.update(
+                pin_table.c.net_num<0,
+                {'net_num': sa.func.abs(pin_table.c.net_num)}))
+            conn.execute(conductor_table.update(
+                conductor_table.c.a_net_num<0,
+                {'a_net_num': sa.func.abs(conductor_table.c.a_net_num)}))
+            conn.execute(conductor_table.update(
+                conductor_table.c.b_net_num<0,
+                {'b_net_num': sa.func.abs(conductor_table.c.b_net_num)}))
 
             trans.commit()
+
         except:
             trans.rollback()
             raise
+
         finally:
             conn.close()
             self._close_ses()
@@ -539,31 +535,33 @@ class Interconnect(object):
     def reorient_cdrs(self):
         conn = meta.bind.connect()
         try:
-
             net_cdr_j = sa.outerjoin(net_table, conductor_table,
                     onclause=net_to_cdr_join)
             unit_fan_order_q = sa.select(
                     [net_table.c.unit,
-                        sa.func.count(conductor_table.c.cable).label('cdr_count')],
-                    from_obj = [net_cdr_j],
-                    group_by = [net_table.c.unit],
-                    order_by = [sa.asc('cdr_count'), net_table.c.unit])
+                     sa.func.count(conductor_table.c.cable)
+                         .label('cdr_count')],
+                    from_obj=[net_cdr_j],
+                    group_by=[net_table.c.unit],
+                    order_by=[sa.asc('cdr_count'), net_table.c.unit])
             unit_fan_order = [r[0] for r in conn.execute(unit_fan_order_q)]
+
         finally:
             conn.close()
 
         s = self._get_ses()
-        
         s.begin()
         try:
             for unit in unit_fan_order:
-                b_cdrs = s.query(Conductor).options(
-                        orm.joinedload('a_net'),
-                        orm.joinedload('b_net')).filter(Conductor.b_net_unit==unit)
+                b_cdrs = (s.query(Conductor)
+                          .options(orm.joinedload('a_net'),
+                                 orm.joinedload('b_net'))
+                          .filter(Conductor.b_net_unit==unit))
                 for cdr in b_cdrs:
                     cdr.swap_orientation()
                 s.flush()
             s.commit()
+
         except:
             s.rollback()
             raise
@@ -580,16 +578,18 @@ class Interconnect(object):
 
     def set_cdr_sub(self, cable, subcdr, new_subcdr):
         self._close_ses()
-        cdrs = conductor_table.select(and_(conductor_table.c.cable == cable,
-            conductor_table.c.subcdr == new_subcdr)).count().execute()
+        cdrs = conductor_table.select(
+                and_(conductor_table.c.cable == cable,
+                     conductor_table.c.subcdr == new_subcdr)
+                ).count().execute()
 
         if list(cdrs)[0][0]:
             raise RuntimeError(
                 'The cable has a conductor with that ID already.')
-        
-        conductor_table.update(values = 
-                { conductor_table.c.subcdr: new_subcdr },
-                whereclause = and_(
+
+        conductor_table.update(
+                values={conductor_table.c.subcdr: new_subcdr},
+                whereclause=and_(
                     conductor_table.c.subcdr == subcdr,
                     conductor_table.c.cable == cable)
                 ).execute()

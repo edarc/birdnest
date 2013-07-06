@@ -3,8 +3,9 @@ class Tabulator(object):
         self._field_widths = list(args)
 
     def __call__(self, *args):
-        return ''.join([ self.pad(arg, width) for arg, width
-            in zip(args, self._field_widths) ]).rstrip()
+        return ''.join(self.pad(arg, width)
+                       for arg, width
+                       in zip(args, self._field_widths)).rstrip()
 
     def pad(self, s, width):
         s_trunc = str(s)[:width]

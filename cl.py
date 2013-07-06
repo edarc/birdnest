@@ -11,7 +11,8 @@ class Birdnest(cmd.Cmd):
         self.prompt = "BN> "
         self.ic = None
         default_delims = readline.get_completer_delims()
-        new_delims = ''.join([ (c not in '-/[]') and c or '' for c in default_delims ])
+        new_delims = ''.join((c not in '-/[]') and c or ''
+                             for c in default_delims)
         readline.set_completer_delims(new_delims)
 
     def _required_args(self, args, required):
@@ -30,7 +31,7 @@ class Birdnest(cmd.Cmd):
     def help_exit(self):
         print """\
             exit
-            
+
             Exit Birdnest
             """
     def do_exit(self, s):
@@ -39,7 +40,7 @@ class Birdnest(cmd.Cmd):
 
     def do_massemit(self, s):
         units = self.ic.complete_unit('')
-        
+
         for unit in units:
             output_file = file("%s%s.il" % (s, unit.strip().lower()), 'w')
             self.ic.unit_display_filter = [unit.strip()]
@@ -103,7 +104,8 @@ class Birdnest(cmd.Cmd):
             command.
             """
     def do_linkfilter(self, s):
-        print "Link Filter is now %s" % (self.ic.toggle_link_filter() and 'ON' or 'OFF')
+        print "Link Filter is now %s" % (
+                'ON' if self.ic.toggle_link_filter() else 'OFF')
 
     def help_ac(self):
         print """\
@@ -199,11 +201,8 @@ class Birdnest(cmd.Cmd):
         if self._required_args(args, [2]):
             return
 
-#        try:
         args[0] = int(args[0])
         self.ic.desc_pin(*args)
-#        except Exception, exc:
-#            print '***', exc
 
     def help_rmnet(self):
         print """\
